@@ -2,9 +2,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from typing import Iterator, Optional
-from logging_config import setup_logging
 
-setup_logging(level="DEBUG")
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
