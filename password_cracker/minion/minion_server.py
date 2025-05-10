@@ -36,8 +36,8 @@ MASTER_URL = "http://localhost:8000"
 MINION_ID = f"minion-{args.port}"
 HEARTBEAT_INTERVAL = 5  # seconds
 REQUEST_TIMEOUT = 300.0  # 5 minutes timeout for requests
-LOG_INTERVAL = 10000  # Log every 10,000 attempts
-CHUNK_SIZE = 1000  # Process numbers in chunks for better performance
+LOG_INTERVAL = 10_000  # Log every 10,000 attempts
+CHUNK_SIZE = 1_000  # Process numbers in chunks for better performance
 
 # Global variables
 app = FastAPI()
@@ -62,8 +62,14 @@ class CrackResponse(BaseModel):
 
 
 def _format_phone(number: int) -> str:
-    """Format a number as a phone number."""
-    return f"050-{number:07d}"
+    """Format a number as a phone number.
+    number: 0 to 99999999 (8 digits after 05)
+    Returns: 05X-XXXXXXX where X is the number padded with zeros
+    """
+    # Extract the first digit (0-9) and remaining 7 digits
+    first_digit = (number // 10_000_000) % 10
+    remaining = number % 10_000_000
+    return f"05{first_digit}-{remaining:07d}"
 
 
 async def process_chunk(start: int, end: int, target_hash: str) -> Optional[str]:
@@ -71,7 +77,7 @@ async def process_chunk(start: int, end: int, target_hash: str) -> Optional[str]
     for number in range(start, end):
         phone = _format_phone(number)
         hash_value = hashlib.md5(phone.encode()).hexdigest()
-        if number % 100000 == 0:  # Log every 100,000 attempts
+        if number % 1_000_000 == 0:  # Log every million attempts
             logger.info(f"Trying phone number: {phone}")
         if hash_value == target_hash:
             logger.info(f"Found match! Phone: {phone}, Hash: {hash_value}")
@@ -143,7 +149,7 @@ async def crack_hash(request: CrackRequest):
 
     try:
         # Process the range sequentially in smaller chunks
-        chunk_size = 10000  # Process 10,000 numbers at a time
+        chunk_size = 100_000  # Process 100,000 numbers at a time
         total_numbers = request.end - request.start + 1
         num_chunks = (total_numbers + chunk_size - 1) // chunk_size
 
@@ -160,12 +166,13 @@ async def crack_hash(request: CrackRequest):
             if (i + 1) % (num_chunks // 10) == 0 or i == num_chunks - 1:  # Log every 10% progress
                 elapsed = (datetime.now() - start_time).total_seconds()
                 rate = attempts / elapsed if elapsed > 0 else 0
+                current_phone = _format_phone(chunk_start)
                 logger.info(
                     f"Progress: {current_progress}% | "
                     f"Attempts: {attempts:,} | "
                     f"Rate: {rate:.2f} hashes/sec | "
                     f"Elapsed: {elapsed:.1f}s | "
-                    f"Current range: {chunk_start:,}-{chunk_end:,}"
+                    f"Current: {current_phone}"
                 )
 
             if result:

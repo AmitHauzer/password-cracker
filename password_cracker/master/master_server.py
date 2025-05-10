@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 HEARTBEAT_TIMEOUT = 30  # seconds
-TOTAL_RANGE = 10_000_000  # 050-0000000 to 050-9999999
+TOTAL_RANGE = 100_000_000  # 050-0000000 to 059-9999999 (10^8 numbers)
 MINION_PORT = 8001
 REQUEST_TIMEOUT = 300.0  # 5 minutes timeout for requests
 
