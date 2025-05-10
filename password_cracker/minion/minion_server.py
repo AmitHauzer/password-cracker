@@ -7,7 +7,6 @@ import httpx
 import uvicorn
 import asyncio
 import hashlib
-import uuid
 import argparse
 from fastapi import FastAPI
 from pydantic import BaseModel

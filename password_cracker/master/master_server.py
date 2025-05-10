@@ -26,9 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-HEARTBEAT_TIMEOUT = 30  # seconds
 TOTAL_RANGE = 100_000_000  # 050-0000000 to 059-9999999 (10^8 numbers)
-MINION_PORT = 8001
 REQUEST_TIMEOUT = 300.0  # 5 minutes timeout for requests
 
 
@@ -192,7 +190,7 @@ async def process_minion_range(minion_id: str, minion: Minion, start: int, end: 
 
 def split_range(total_range: int, num_minions: int) -> List[Tuple[int, int]]:
     """Split the total range into parts for each minion."""
-    part_size = total_range // num_minions
+    part_size = max(1, total_range // num_minions)
     ranges = []
     for i in range(num_minions):
         start = i * part_size
