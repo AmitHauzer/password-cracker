@@ -3,178 +3,211 @@ Minion server for password cracking.
 """
 
 import logging
-import uuid
-import hashlib
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from contextlib import asynccontextmanager
 import asyncio
-from datetime import datetime
+import hashlib
+import uuid
+import argparse
+from fastapi import FastAPI
+from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
+
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Start a minion server')
+parser.add_argument('--port', type=int, required=True,
+                    help='Port to run the server on')
+args = parser.parse_args()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Constants
 MASTER_URL = "http://localhost:8000"
+MINION_ID = f"minion-{args.port}"
 HEARTBEAT_INTERVAL = 5  # seconds
-MAX_RETRIES = 5
-RETRY_DELAY = 5  # seconds
+REQUEST_TIMEOUT = 300.0  # 5 minutes timeout for requests
+LOG_INTERVAL = 10000  # Log every 10,000 attempts
+CHUNK_SIZE = 1000  # Process numbers in chunks for better performance
+
+# Global variables
+app = FastAPI()
+is_registered = False
+current_task = None
+current_progress = 0
+attempts = 0
 
 
-class TaskStatus:
-    """Task status tracking."""
-
-    def __init__(self):
-        self.current_task: Optional[CrackTask] = None
-        self.start_time: Optional[datetime] = None
-        self.progress: int = 0
-        self.status: str = "idle"
-        self.last_heartbeat: Optional[datetime] = None
-
-
-class CrackTask(BaseModel):
-    """Task model for cracking a hash."""
+class CrackRequest(BaseModel):
+    """Request model for cracking a hash."""
     hash: str
     start: int
     end: int
 
 
-def calculate(start: int, end: int, target_hash: str, task_status: TaskStatus) -> str | None:
-    """Calculate MD5 hashes for phone numbers in the given range."""
-    total = end - start
-    for i in range(start, end):
-        # Update progress every 1%
-        if (i - start) % (total // 100) == 0:
-            task_status.progress = ((i - start) * 100) // total
-            logger.info(f"Progress: {task_status.progress}%")
+class CrackResponse(BaseModel):
+    """Response model for cracking a hash."""
+    status: str
+    password: Optional[str] = None
+    error: Optional[str] = None
 
-        # Format as phone number: 050-XXXXXXX
-        phone = f"050-{i:07d}"
+
+def _format_phone(number: int) -> str:
+    """Format a number as a phone number."""
+    return f"050-{number:07d}"
+
+
+async def process_chunk(start: int, end: int, target_hash: str) -> Optional[str]:
+    """Process a chunk of numbers sequentially."""
+    for number in range(start, end):
+        phone = _format_phone(number)
         hash_value = hashlib.md5(phone.encode()).hexdigest()
+        if number % 100000 == 0:  # Log every 100,000 attempts
+            logger.info(f"Trying phone number: {phone}")
         if hash_value == target_hash:
+            logger.info(f"Found match! Phone: {phone}, Hash: {hash_value}")
             return phone
     return None
 
 
-async def connect_to_master(minion_id: str) -> bool:
-    """Attempt to connect to the master server."""
-    retries = 0
-    while retries < MAX_RETRIES:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{MASTER_URL}/register/{minion_id}")
-                if response.status_code == 200:
-                    logger.info(
-                        f"Successfully registered with master as {minion_id}")
-                    return True
-                else:
-                    logger.error(
-                        f"Failed to register with master: {response.status_code}")
-        except Exception as e:
-            logger.warning(f"Connection attempt {retries + 1} failed: {e}")
-
-        retries += 1
-        if retries < MAX_RETRIES:
-            logger.info(f"Retrying in {RETRY_DELAY} seconds...")
-            await asyncio.sleep(RETRY_DELAY)
-
-    logger.error("Failed to connect to master after maximum retries")
-    return False
-
-
-async def send_heartbeat(minion_id: str) -> bool:
-    """Send heartbeat to master server."""
+async def register_with_master():
+    """Register this minion with the master server."""
+    global is_registered
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"{MASTER_URL}/heartbeat/{minion_id}")
+            response = await client.post(
+                f"{MASTER_URL}/register/{MINION_ID}",
+                params={"port": args.port},
+                timeout=REQUEST_TIMEOUT
+            )
             if response.status_code == 200:
-                task_status.last_heartbeat = datetime.now()
-                return True
-            logger.error(f"Heartbeat failed: {response.status_code}")
+                is_registered = True
+                logger.info(
+                    f"Successfully registered with master as {MINION_ID}")
+            else:
+                logger.error(
+                    f"Failed to register with master: {response.status_code}")
     except Exception as e:
-        logger.error(f"Heartbeat error: {e}")
-    return False
+        logger.error(f"Error registering with master: {e}")
 
 
-async def send_heartbeat_loop():
-    """Send periodic heartbeats to master."""
+async def send_heartbeat():
+    """Send heartbeat to master server."""
     while True:
-        await send_heartbeat(minion_id)
+        try:
+            if is_registered:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{MASTER_URL}/heartbeat/{MINION_ID}",
+                        timeout=REQUEST_TIMEOUT
+                    )
+                    if response.status_code != 200:
+                        logger.warning(
+                            f"Heartbeat failed: {response.status_code}")
+                        await register_with_master()
+            else:
+                await register_with_master()
+        except Exception as e:
+            logger.error(f"Error sending heartbeat: {e}")
+            await register_with_master()
         await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan event handler."""
-    # Startup
-    if not await connect_to_master(minion_id):
-        logger.error("Failed to connect to master, shutting down")
-        raise RuntimeError("Failed to connect to master")
+@app.on_event("startup")
+async def startup_event():
+    """Start heartbeat on startup."""
+    logger.info(f"Starting minion server on port {args.port}")
+    asyncio.create_task(send_heartbeat())
 
-    # Start heartbeat task
-    heartbeat_task = asyncio.create_task(send_heartbeat_loop())
 
-    yield
+@app.post("/crack", response_model=CrackResponse)
+async def crack_hash(request: CrackRequest):
+    """Crack a hash in the given range."""
+    global current_task, current_progress, attempts
+    logger.info(
+        f"Received crack request for hash {request.hash} in range {request.start:,}-{request.end:,}")
 
-    # Shutdown
-    heartbeat_task.cancel()
+    current_task = request.hash
+    current_progress = 0
+    attempts = 0
+    start_time = datetime.now()
+
     try:
-        await heartbeat_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("Shutting down minion")
+        # Process the range sequentially in smaller chunks
+        chunk_size = 10000  # Process 10,000 numbers at a time
+        total_numbers = request.end - request.start + 1
+        num_chunks = (total_numbers + chunk_size - 1) // chunk_size
 
-app = FastAPI(lifespan=lifespan)
-minion_id = str(uuid.uuid4())
-task_status = TaskStatus()
+        logger.info(f"Processing {num_chunks} chunks sequentially")
+
+        for i in range(num_chunks):
+            chunk_start = request.start + (i * chunk_size)
+            chunk_end = min(chunk_start + chunk_size, request.end + 1)
+
+            result = await process_chunk(chunk_start, chunk_end, request.hash)
+            attempts += chunk_end - chunk_start
+            current_progress = int((i + 1) * 100 / num_chunks)
+
+            if (i + 1) % (num_chunks // 10) == 0 or i == num_chunks - 1:  # Log every 10% progress
+                elapsed = (datetime.now() - start_time).total_seconds()
+                rate = attempts / elapsed if elapsed > 0 else 0
+                logger.info(
+                    f"Progress: {current_progress}% | "
+                    f"Attempts: {attempts:,} | "
+                    f"Rate: {rate:.2f} hashes/sec | "
+                    f"Elapsed: {elapsed:.1f}s | "
+                    f"Current range: {chunk_start:,}-{chunk_end:,}"
+                )
+
+            if result:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    f"Found password for hash {request.hash}: {result} | "
+                    f"Total attempts: {attempts:,} | "
+                    f"Time: {elapsed:.2f} seconds"
+                )
+                current_task = None
+                current_progress = 0
+                return CrackResponse(status="success", password=result)
+
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(
+            f"No password found for hash {request.hash} in range {request.start:,}-{request.end:,} | "
+            f"Total attempts: {attempts:,} | "
+            f"Time: {elapsed:.2f} seconds"
+        )
+        current_task = None
+        current_progress = 0
+        return CrackResponse(status="not_found", error="Password not found in range")
+    except Exception as e:
+        logger.error(f"Error cracking hash: {e}")
+        current_task = None
+        current_progress = 0
+        return CrackResponse(status="error", error=str(e))
 
 
 @app.get("/status")
 async def get_status():
-    """Get current minion status."""
+    """Get minion status."""
+    logger.debug("Status request received")
     return {
-        "minion_id": minion_id,
-        "status": task_status.status,
-        "progress": task_status.progress,
-        "current_task": task_status.current_task.dict() if task_status.current_task else None,
-        "last_heartbeat": task_status.last_heartbeat,
-        "uptime": (datetime.now() - task_status.start_time).total_seconds() if task_status.start_time else 0
+        "minion_id": MINION_ID,
+        "port": args.port,
+        "is_registered": is_registered,
+        "current_task": current_task,
+        "progress": current_progress,
+        "attempts": attempts
     }
 
 
-@app.post("/crack")
-async def crack_hash(task: CrackTask):
-    """Crack a hash in the given range."""
-    logger.info(
-        f"Received task: hash={task.hash}, range={task.start}-{task.end}")
-
-    # Update task status
-    task_status.current_task = task
-    task_status.start_time = datetime.now()
-    task_status.status = "processing"
-    task_status.progress = 0
-
-    try:
-        result = calculate(task.start, task.end, task.hash, task_status)
-
-        if result:
-            logger.info(f"Found password: {result}")
-            task_status.status = "completed"
-            return {"status": "success", "password": result}
-        else:
-            logger.info("No password found in range")
-            task_status.status = "completed"
-            return {"status": "not_found"}
-    except Exception as e:
-        logger.error(f"Error processing task: {e}")
-        task_status.status = "failed"
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        task_status.progress = 100
-
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
