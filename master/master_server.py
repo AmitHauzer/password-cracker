@@ -11,7 +11,7 @@ from pathlib import Path
 import json
 import uvicorn
 
-from config import MASTER_SERVER_PORT, setup_logger, parse_args
+from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
 from .utils.models import HashTask, MinionRegistration
 from .utils.utils import get_hash_from_file, save_temp_file
 
@@ -38,14 +38,54 @@ async def root():
 @app.post("/register")
 async def register_minion(minion: MinionRegistration):
     """Register a new minion server."""
+
+    if minion.minion_id in minions:
+        raise HTTPException(
+            status_code=400, detail=f"Minion {minion.minion_id} already registered")
+
     minions[minion.minion_id] = {
         "host": minion.host,
         "port": minion.port,
         "capabilities": minion.capabilities,
-        "status": "active"
+        "status": "active",
+        "registered_at": asyncio.get_event_loop().time()
     }
-    logger.info(f"Minion {minion.minion_id} registered successfully")
-    return {"status": "success", "message": f"Minion {minion.minion_id} registered successfully"}
+    logger.info(
+        f"Minion {minion.minion_id} registered successfully at {minion.host}:{minion.port}")
+    return {
+        "status": "success",
+        "message": f"Minion {minion.minion_id} registered successfully",
+        "minion_id": minion.minion_id
+    }
+
+
+@app.get("/minions")
+async def list_minions():
+    """List all registered minions."""
+    return {
+        "minions": [
+            {
+                "minion_id": mid,
+                "host": data["host"],
+                "port": data["port"],
+                "status": data["status"],
+                "capabilities": data["capabilities"]
+            }
+            for mid, data in minions.items()
+        ]
+    }
+
+
+@app.post("/minions/{minion_id}/heartbeat")
+async def minion_heartbeat(minion_id: str):
+    """Update minion heartbeat."""
+    if minion_id not in minions:
+        raise HTTPException(
+            status_code=404, detail=f"Minion {minion_id} not found")
+
+    minions[minion_id]["last_heartbeat"] = asyncio.get_event_loop().time()
+    minions[minion_id]["status"] = "active"
+    return {"status": "success"}
 
 
 @app.post("/upload-hashes")
@@ -113,5 +153,5 @@ async def get_status():
     }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=args.host,
+    uvicorn.run(app, host=MASTER_SERVER_HOST,
                 log_level=args.log_level, port=MASTER_SERVER_PORT)

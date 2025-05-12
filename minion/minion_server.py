@@ -1,18 +1,94 @@
+"""
+Minion server for the password cracker.
+"""
 
+import asyncio
 from config import parse_args, setup_logger, MASTER_SERVER_URL
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 import uvicorn
+import httpx
+from contextlib import asynccontextmanager
 
 
 args = parse_args("Password Cracker Minion Server")
 
 logger = setup_logger("minion_server", log_level=args.log_level)
 
-# Create FastAPI app
-app = FastAPI(title="Password Cracker Minion Server")
+# Minion configuration
+MINION_ID = f"minion-{args.port}"
+MINION_HOST = args.host
+MINION_PORT = args.port
+MINION_CAPABILITIES = ["md5_crack"]  # Add more capabilities as needed
+REQUEST_TIMEOUT = 10
+HEARTBEAT_INTERVAL = 5
 
-minion_id = f"minion-{args.port}"
+is_registered = False
+
+
+async def register_to_master() -> bool:
+    """Register this minion with the master server."""
+    global is_registered
+    try:
+        async with httpx.AsyncClient() as client:
+            req = {"minion_id": MINION_ID, "host": MINION_HOST,
+                   "port": MINION_PORT, "capabilities": MINION_CAPABILITIES}
+            logger.debug(f"register_to_master request details: {req}")
+
+            response = await client.post(f"{MASTER_SERVER_URL}/register", json={**req}, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            if response.status_code == 200:
+                is_registered = True
+                logger.info(
+                    f"Successfully registered with master server as {MINION_ID}")
+                return True
+            return False
+    except Exception as e:
+        is_registered = False
+        logger.error(f"Failed to register with master server: {str(e)}")
+        return False
+
+
+async def send_heartbeat():
+    """Send heartbeat to master server."""
+    while True:
+        try:
+            if is_registered:
+                logger.info(
+                    f"Sending heartbeat to master at {MASTER_SERVER_URL} from minion {MINION_ID}")
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{MASTER_SERVER_URL}/minions/{MINION_ID}/heartbeat",
+                        timeout=REQUEST_TIMEOUT
+                    )
+                    if response.status_code != 200:
+                        logger.warning(
+                            f"Heartbeat failed: {response.status_code}")
+                        await register_to_master()
+            else:
+                await register_to_master()
+        except Exception as e:
+            logger.error(f"Error sending heartbeat: {e}")
+            await register_to_master()
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan events for the application."""
+    # Startup
+    logger.info(f"Minion {MINION_ID} is starting")
+    is_registered = await register_to_master()
+    if is_registered:
+        asyncio.create_task(send_heartbeat())
+    yield
+    # Shutdown
+    logger.info("Shutting down minion server")
+
+
+# Create FastAPI app with lifespan
+app = FastAPI(title="Password Cracker Minion Server", lifespan=lifespan)
 
 
 @app.get("/")
@@ -22,8 +98,9 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "active"}
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(app, host=MINION_HOST, port=MINION_PORT,
+                log_level=args.log_level)
