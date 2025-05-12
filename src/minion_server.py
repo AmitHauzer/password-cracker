@@ -3,6 +3,8 @@ Minion server for the password cracker.
 """
 
 from contextlib import asynccontextmanager
+from hashlib import md5
+from typing import AsyncIterator, Dict
 
 import asyncio
 import httpx
@@ -10,8 +12,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
-from config import parse_args, setup_logger, MASTER_SERVER_URL
-
+from config import parse_args, setup_logger, MASTER_SERVER_URL, FORMATTER_TASK_NAME
+from formatters import FORMATTERS
+from models.schemas.request_schemas import SubmitResultRequest
 
 args = parse_args("Password Cracker Minion Server")
 
@@ -53,7 +56,7 @@ async def register_to_master() -> bool:
         return False
 
 
-async def send_heartbeat():
+async def send_heartbeat() -> None:
     """Send heartbeat to master server."""
     while True:
         try:
@@ -77,7 +80,7 @@ async def send_heartbeat():
         await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 
-async def disconnect_from_master():
+async def disconnect_from_master() -> None:
     """Disconnect from the master server."""
     async with httpx.AsyncClient() as client:
         await client.post(f"{MASTER_SERVER_URL}/disconnect-minion", json={"minion_id": MINION_ID})
@@ -85,7 +88,7 @@ async def disconnect_from_master():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan events for the application."""
     # Startup
     logger.info(f"Minion {MINION_ID} is starting")
@@ -103,14 +106,66 @@ app = FastAPI(title="Password Cracker Minion Server", lifespan=lifespan)
 
 
 @app.get("/")
-async def root():
+async def root() -> RedirectResponse:
+    """Redirect to the docs."""
     return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
-async def health():
+async def health() -> Dict[str, str]:
+    """Health check."""
     return {"status": "active"}
 
+
+async def should_continue(task_id: str) -> bool:
+    """
+    Ask the master if this task is still assigned.
+    Returns False if status is 'cancelled' or 'completed'.
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"{MASTER_SERVER_URL}/task-status",
+            params={"task_id": task_id},
+            timeout=5.0
+        )
+
+    r.raise_for_status()
+    status = r.json()["status"]
+    return status == "assigned"
+
+
+async def crack_range(task_id: str, hash_value: str, start: int, end: int) -> None:
+    """Crack a range of numbers."""
+    for candidate in range(start, end + 1):
+        fmt = FORMATTERS[FORMATTER_TASK_NAME]
+        phone_str = fmt.number_to_string(candidate)
+
+        # every N attempts (or time), check if we should stop:
+        if candidate % 1000 == 0:
+            if not await should_continue(task_id):
+                logger.info(f"Task {task_id} cancelled—stopping early.")
+                return  # exit the loop
+
+        if md5(phone_str.encode()).hexdigest() == hash_value:
+            # found it—report and return
+            await submit_result(MINION_ID, task_id, phone_str)
+            return
+    # exhausted slice, report no result
+    await submit_result(MINION_ID, task_id, "")
+
+
+async def submit_result(minion_id: str, task_id: str, result: str) -> None:
+    """Submit a result to the master server."""
+    payload = SubmitResultRequest(
+        minion_id=minion_id,
+        task_id=task_id,
+        result=result
+    )
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{MASTER_SERVER_URL}/submit-result",
+            json=payload.model_dump()
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host=MINION_HOST, port=MINION_PORT,

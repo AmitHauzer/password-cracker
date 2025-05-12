@@ -2,7 +2,7 @@
 Models for the master server.
 """
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -22,20 +22,6 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class MinionRegistration(BaseModel):
-    """Minion registration request.
-
-    minion_id: The ID of the minion registering.
-    host:      The host of the minion.
-    port:      The port of the minion.
-    capabilities: The capabilities of the minion.
-    """
-    minion_id: str
-    host: str
-    port: int
-    capabilities: List[str]
-
-
 class HashTask(BaseModel):
     """Hash task request.
 
@@ -51,11 +37,3 @@ class HashTask(BaseModel):
     status: TaskStatus = TaskStatus.PENDING
     assigned_to: Optional[str] = None
     result: Optional[str] = None
-
-
-class DisconnectRequest(BaseModel):
-    """Disconnect request.
-
-    minion_id: The ID of the minion disconnecting.
-    """
-    minion_id: str

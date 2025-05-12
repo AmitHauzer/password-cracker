@@ -2,20 +2,17 @@
 Master server for the password cracker.
 """
 
-from typing import Any, Dict
-from pathlib import Path
+from typing import Any, Dict, List, Union
 from datetime import datetime
 
 import uvicorn
-import asyncio
-import json
-import hashlib
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
-from models.models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
-from models.schemas.request_schemas import SubmitResultRequest
+from models.models import HashTask, TaskStatus
+from models.schemas.request_schemas import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
+from models.schemas.response_schemas import GetTaskResponse, NoTasksResponse
 from utils.master_utils import get_hash_from_file, save_temp_file, split_range
 from formatters import FORMATTERS
 
@@ -36,12 +33,12 @@ tasks: Dict[str, HashTask] = {}
 
 
 @app.get("/")
-async def root():
+async def root() -> RedirectResponse:
     return RedirectResponse(url="/docs")
 
 
 @app.post("/register")
-async def register_minion(minion: MinionRegistration):
+async def register_minion(minion: MinionRegistrationRequest) -> Dict[str, str]:
     """Register a new minion server."""
     if minion.minion_id in minions:
         logger.warning(
@@ -70,7 +67,7 @@ async def register_minion(minion: MinionRegistration):
 
 
 @app.post("/disconnect-minion")
-async def disconnect_minion(req: DisconnectRequest):
+async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
     """Disconnect a minion from the master server."""
     if req.minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
@@ -80,7 +77,7 @@ async def disconnect_minion(req: DisconnectRequest):
 
 
 @app.get("/minions")
-async def list_minions():
+async def list_minions() -> Dict[str, List[Dict[str, Any]]]:
     """List all registered minions."""
     return {
         "minions": [
@@ -97,7 +94,7 @@ async def list_minions():
 
 
 @app.post("/minions/{minion_id}/heartbeat")
-async def minion_heartbeat(minion_id: str):
+async def minion_heartbeat(minion_id: str) -> Dict[str, str]:
     """Update minion heartbeat."""
     if minion_id not in minions:
         raise HTTPException(
@@ -109,7 +106,7 @@ async def minion_heartbeat(minion_id: str):
 
 
 @app.post("/upload-hashes")
-async def upload_hashes(file: UploadFile = File(...)):
+async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
     """Upload a file containing MD5 hashes."""
     try:
         # TODO: check if the the master server is already processing a file
@@ -141,8 +138,8 @@ async def upload_hashes(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/get-task")
-async def get_task(minion_id: str):
+@app.get("/get-task", response_model=Union[GetTaskResponse, NoTasksResponse])
+async def get_task(minion_id: str) -> Dict[str, Any]:
     """Get a task for a minion to process."""
     if minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
@@ -153,16 +150,15 @@ async def get_task(minion_id: str):
             task.status = TaskStatus.ASSIGNED
             task.assigned_to = minion_id
             fmt = FORMATTERS[FORMATTER_TASK_NAME]
-            return {
-                "task_id":   task_id,
-                "hash":      task.hash_value,
-                "start":     task.start,
-                "end":       task.end,
-                "start_str": fmt.number_to_string(task.start),
-                "end_str":   fmt.number_to_string(task.end),
-            }
+            return GetTaskResponse(task_id=task_id,
+                                   hash=task.hash_value,
+                                   start=task.start,
+                                   end=task.end,
+                                   start_str=fmt.number_to_string(task.start),
+                                   end_str=fmt.number_to_string(task.end),
+                                   )
 
-    return {"status": "no_tasks"}
+    return NoTasksResponse(status="no_tasks")
 
 
 @app.get("/all-tasks")
@@ -211,8 +207,19 @@ async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
     return {"status": "success", "task_id": req.task_id, "new_status": task.status.value}
 
 
+@app.get("/task-status")
+async def task_status(task_id: str = Query(..., description="ID of the task to check")) -> Dict[str, str]:
+    """
+    Return the current status of a given task_id.
+    """
+    task = tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"task_id": task_id, "status": task.status.value}
+
+
 @app.get("/status")
-async def get_status():
+async def get_status() -> Dict[str, Dict[str, Any]]:
     """Get the current status of all tasks and minions."""
     return {
         "minions": minions,
