@@ -66,7 +66,7 @@ def parse_args(description: str) -> argparse.Namespace:
                         help='Log level to use')
 
     if "minion" in description.lower():
-        parser.add_argument("--host", type=str, default="localhost",
+        parser.add_argument("--host", type=str,
                             help='Host to run the server on')
         parser.add_argument("--port", type=int, required=True,
                             help='Port to run the server on')

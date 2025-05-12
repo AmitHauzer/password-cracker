@@ -1,23 +1,25 @@
 """
 Minion server for the password cracker.
 """
-
 import asyncio
-from config import parse_args, setup_logger, MASTER_SERVER_URL
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from contextlib import asynccontextmanager
+
 import uvicorn
 import httpx
-from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+from config import parse_args, setup_logger, MASTER_SERVER_URL
 
 
 args = parse_args("Password Cracker Minion Server")
 
-logger = setup_logger("minion_server", log_level=args.log_level)
+logger = setup_logger(
+    "minion_server", log_level=args.log_level, port=args.port)
 
 # Minion configuration
 MINION_ID = f"minion-{args.port}"
-MINION_HOST = args.host
+MINION_HOST = args.host if args.host else "localhost"
 MINION_PORT = args.port
 MINION_CAPABILITIES = ["md5_crack"]  # Add more capabilities as needed
 REQUEST_TIMEOUT = 10
@@ -74,6 +76,13 @@ async def send_heartbeat():
         await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 
+async def disconnect_from_master():
+    """Disconnect from the master server."""
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{MASTER_SERVER_URL}/disconnect-minion", json={"minion_id": MINION_ID})
+        logger.info(f"Disconnected from master server as minion {MINION_ID}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for the application."""
@@ -84,6 +93,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(send_heartbeat())
     yield
     # Shutdown
+    await disconnect_from_master()
     logger.info("Shutting down minion server")
 
 

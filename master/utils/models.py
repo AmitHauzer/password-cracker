@@ -23,3 +23,7 @@ class HashTask(BaseModel):
     status: EnumStatus = EnumStatus.pending
     assigned_to: Optional[str] = None
     result: Optional[str] = None
+
+
+class DisconnectRequest(BaseModel):
+    minion_id: str

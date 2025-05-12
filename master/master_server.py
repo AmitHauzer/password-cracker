@@ -12,7 +12,7 @@ import json
 import uvicorn
 
 from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
-from .utils.models import HashTask, MinionRegistration
+from .utils.models import DisconnectRequest, HashTask, MinionRegistration
 from .utils.utils import get_hash_from_file, save_temp_file
 
 # Parse command line arguments
@@ -159,6 +159,16 @@ async def get_status():
         "minions": minions,
         "tasks": {k: v.dict() for k, v in tasks.items()}
     }
+
+
+@app.post("/disconnect-minion")
+async def disconnect_minion(req: DisconnectRequest):
+    """Disconnect a minion from the master server."""
+    if req.minion_id not in minions:
+        raise HTTPException(status_code=404, detail="Minion not registered")
+
+    minions[req.minion_id]["status"] = "disconnected"
+    return {"status": "success"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host=MASTER_SERVER_HOST,
