@@ -1,11 +1,12 @@
 """
 Minion server for the password cracker.
 """
-import asyncio
+
 from contextlib import asynccontextmanager
 
-import uvicorn
+import asyncio
 import httpx
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 

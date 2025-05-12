@@ -2,17 +2,19 @@
 Master server for the password cracker.
 """
 
+from typing import Dict
+from pathlib import Path
+from datetime import datetime
+
+import uvicorn
+import asyncio
+import json
+import hashlib
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import RedirectResponse
-from typing import Dict
-import hashlib
-import asyncio
-from pathlib import Path
-import json
-import uvicorn
 
 from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
-from .utils.models import DisconnectRequest, HashTask, MinionRegistration
+from .utils.models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
 from .utils.utils import get_hash_from_file, save_temp_file
 
 # Parse command line arguments
@@ -47,7 +49,7 @@ async def register_minion(minion: MinionRegistration):
             "port": minion.port,
             "capabilities": minion.capabilities,
             "status": "active",
-            "registered_at": asyncio.get_event_loop().time()
+            "registered_at": datetime.now()
         })
     else:
         # Register new minion
@@ -56,7 +58,7 @@ async def register_minion(minion: MinionRegistration):
             "port": minion.port,
             "capabilities": minion.capabilities,
             "status": "active",
-            "registered_at": asyncio.get_event_loop().time()
+            "registered_at": datetime.now()
         }
 
     logger.info(
@@ -88,7 +90,7 @@ async def minion_heartbeat(minion_id: str):
         raise HTTPException(
             status_code=404, detail=f"Minion {minion_id} not found")
 
-    minions[minion_id]["last_heartbeat"] = asyncio.get_event_loop().time()
+    minions[minion_id]["last_heartbeat"] = datetime.now()
     minions[minion_id]["status"] = "active"
     return {"status": "success"}
 
@@ -125,8 +127,8 @@ async def get_task(minion_id: str):
 
     # Find an unassigned task
     for hash_value, task in tasks.items():
-        if task.status == "pending":
-            task.status = "in_progress"
+        if task.status == TaskStatus.PENDING:
+            task.status = TaskStatus.ASSIGNED
             task.assigned_to = minion_id
             return {"hash": hash_value}
 
@@ -147,7 +149,7 @@ async def submit_result(minion_id: str, hash_value: str, result: str):
         raise HTTPException(
             status_code=403, detail="Task not assigned to this minion")
 
-    task.status = "completed"
+    task.status = TaskStatus.COMPLETED
     task.result = result
     return {"status": "success"}
 
