@@ -14,8 +14,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import RedirectResponse
 
 from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
-from .utils.models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
-from .utils.utils import get_hash_from_file, save_temp_file
+from models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
+from utils.master_utils import get_hash_from_file, save_temp_file
+from formatters import FORMATTERS
+
+fmt = FORMATTERS["israel_phone"]
 
 # Parse command line arguments
 args = parse_args("Password Cracker Master Server")
