@@ -1,7 +1,13 @@
 [project]
 name = "password-cracker"
 version = "0.1.0"
-description = "Add your description here"
+description = "Password cracker with master-minion architecture"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.6.0",
+    "python-multipart>=0.0.9"
+]
+
