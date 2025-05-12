@@ -38,25 +38,30 @@ async def root():
 @app.post("/register")
 async def register_minion(minion: MinionRegistration):
     """Register a new minion server."""
-
     if minion.minion_id in minions:
-        raise HTTPException(
-            status_code=400, detail=f"Minion {minion.minion_id} already registered")
+        logger.warning(
+            f"Minion {minion.minion_id} already registered. Updating registration.")
+        # Update existing minion's information
+        minions[minion.minion_id].update({
+            "host": minion.host,
+            "port": minion.port,
+            "capabilities": minion.capabilities,
+            "status": "active",
+            "registered_at": asyncio.get_event_loop().time()
+        })
+    else:
+        # Register new minion
+        minions[minion.minion_id] = {
+            "host": minion.host,
+            "port": minion.port,
+            "capabilities": minion.capabilities,
+            "status": "active",
+            "registered_at": asyncio.get_event_loop().time()
+        }
 
-    minions[minion.minion_id] = {
-        "host": minion.host,
-        "port": minion.port,
-        "capabilities": minion.capabilities,
-        "status": "active",
-        "registered_at": asyncio.get_event_loop().time()
-    }
     logger.info(
         f"Minion {minion.minion_id} registered successfully at {minion.host}:{minion.port}")
-    return {
-        "status": "success",
-        "message": f"Minion {minion.minion_id} registered successfully",
-        "minion_id": minion.minion_id
-    }
+    return {"status": "success", "message": f"Minion {minion.minion_id} registered successfully"}
 
 
 @app.get("/minions")
@@ -92,6 +97,9 @@ async def minion_heartbeat(minion_id: str):
 async def upload_hashes(file: UploadFile = File(...)):
     """Upload a file containing MD5 hashes."""
     try:
+        # TODO: check if the the master server is already processing a file
+        # TODO: if so, return a message that the server is busy
+
         # Save the uploaded file temporarily
         temp_file = await save_temp_file(file)
 
