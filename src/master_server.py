@@ -14,7 +14,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import RedirectResponse
 
 from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
-from models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
+from models.models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
+from models.schemas.request_schemas import SubmitResultRequest
 from utils.master_utils import get_hash_from_file, save_temp_file, split_range
 from formatters import FORMATTERS
 
@@ -66,6 +67,16 @@ async def register_minion(minion: MinionRegistration):
     logger.info(
         f"Minion {minion.minion_id} registered successfully at {minion.host}:{minion.port}")
     return {"status": "success", "message": f"Minion {minion.minion_id} registered successfully"}
+
+
+@app.post("/disconnect-minion")
+async def disconnect_minion(req: DisconnectRequest):
+    """Disconnect a minion from the master server."""
+    if req.minion_id not in minions:
+        raise HTTPException(status_code=404, detail="Minion not registered")
+
+    minions[req.minion_id]["status"] = "disconnected"
+    return {"status": "success"}
 
 
 @app.get("/minions")
@@ -154,36 +165,8 @@ async def get_task(minion_id: str):
     return {"status": "no_tasks"}
 
 
-@app.post("/submit-result")
-async def submit_result(minion_id: str, hash_value: str, result: str):
-    """Submit a result from a minion."""
-    if minion_id not in minions:
-        raise HTTPException(status_code=404, detail="Minion not registered")
-
-    if hash_value not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    task = tasks[hash_value]
-    if task.assigned_to != minion_id:
-        raise HTTPException(
-            status_code=403, detail="Task not assigned to this minion")
-
-    task.status = TaskStatus.COMPLETED
-    task.result = result
-    return {"status": "success"}
-
-
-@app.get("/status")
-async def get_status():
-    """Get the current status of all tasks and minions."""
-    return {
-        "minions": minions,
-        "tasks": {k: v.model_dump() for k, v in tasks.items()}
-    }
-
-
 @app.get("/all-tasks")
-async def all_task() -> Dict[str, Dict[str, Any]]:
+async def all_tasks() -> Dict[str, Dict[str, Any]]:
     """
     Return the full in-memory tasks dict, keyed by task_id.
     Each value includes hash_value, start/end, status, assigned_to, result.
@@ -197,14 +180,44 @@ async def all_task() -> Dict[str, Dict[str, Any]]:
     }
 
 
-@app.post("/disconnect-minion")
-async def disconnect_minion(req: DisconnectRequest):
-    """Disconnect a minion from the master server."""
+@app.post("/submit-result")
+async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
+    """Submit a result from a minion."""
+    # 1) Validate minion
     if req.minion_id not in minions:
-        raise HTTPException(status_code=404, detail="Minion not registered")
+        raise HTTPException(404, "Minion not registered")
 
-    minions[req.minion_id]["status"] = "disconnected"
-    return {"status": "success"}
+    # 2) Validate task
+    task = tasks.get(req.task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if task.assigned_to != req.minion_id:
+        raise HTTPException(400, "Task not assigned to this minion")
+
+    # 3) Update this task
+    if req.result:
+        task.status = TaskStatus.COMPLETED
+        task.result = req.result
+        # 4) Cancel all other slices for the same hash
+        hash_val = task.hash_value
+        for other_id, other in tasks.items():
+            if (other.hash_value == hash_val) and (other_id != req.task_id):
+                if other.status in (TaskStatus.PENDING, TaskStatus.ASSIGNED):
+                    other.status = TaskStatus.CANCELLED
+    else:
+        # no result found in this slice
+        task.status = TaskStatus.CANCELLED
+
+    return {"status": "success", "task_id": req.task_id, "new_status": task.status.value}
+
+
+@app.get("/status")
+async def get_status():
+    """Get the current status of all tasks and minions."""
+    return {
+        "minions": minions,
+        "tasks": {k: v.model_dump() for k, v in tasks.items()}
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host=MASTER_SERVER_HOST,
