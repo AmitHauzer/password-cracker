@@ -11,6 +11,8 @@ MASTER_SERVER_HOST = "localhost"
 MASTER_SERVER_PORT = 8000
 MASTER_SERVER_URL = f"http://{MASTER_SERVER_HOST}:{MASTER_SERVER_PORT}"
 
+FORMATTER_TASK_NAME = "israel_phone"
+
 
 def file_name(name: str, port: int | None = None) -> str:
     if "minion" in name:

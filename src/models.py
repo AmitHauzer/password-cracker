@@ -25,6 +25,8 @@ class MinionRegistration(BaseModel):
 class HashTask(BaseModel):
     """Hash task request."""
     hash_value: str
+    start: int
+    end: int
     status: TaskStatus = TaskStatus.PENDING
     assigned_to: Optional[str] = None
     result: Optional[str] = None

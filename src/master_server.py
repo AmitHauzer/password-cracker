@@ -2,7 +2,7 @@
 Master server for the password cracker.
 """
 
-from typing import Dict
+from typing import Any, Dict
 from pathlib import Path
 from datetime import datetime
 
@@ -13,12 +13,11 @@ import hashlib
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import RedirectResponse
 
-from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
+from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
 from models import DisconnectRequest, HashTask, MinionRegistration, TaskStatus
-from utils.master_utils import get_hash_from_file, save_temp_file
+from utils.master_utils import get_hash_from_file, save_temp_file, split_range
 from formatters import FORMATTERS
 
-fmt = FORMATTERS["israel_phone"]
 
 # Parse command line arguments
 args = parse_args("Password Cracker Master Server")
@@ -107,16 +106,25 @@ async def upload_hashes(file: UploadFile = File(...)):
 
         # Save the uploaded file temporarily
         temp_file = await save_temp_file(file)
+        fmt = FORMATTERS[FORMATTER_TASK_NAME]
+        numeric_slices = split_range(
+            fmt.min_value, fmt.max_value, len(minions))
 
         # Process hashes and create tasks
         for hash_value in get_hash_from_file(temp_file):
             logger.info(f"master got hash: {hash_value}")
-            tasks[len(tasks)] = HashTask(hash_value=hash_value)
+            for idx, (start, end) in enumerate(numeric_slices):
+                task_id = f"{hash_value}_{idx}"
+                tasks[task_id] = HashTask(
+                    hash_value=hash_value,
+                    start=start,
+                    end=end
+                )
+                logger.info(f"Created task {task_id}: {start}–{end}")
 
         # clean up
         temp_file.unlink()
 
-        logger.debug(f"master processed {len(tasks)} hashes")
         return {"status": "success", "message": f"Processed {len(tasks)} hashes"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,11 +137,19 @@ async def get_task(minion_id: str):
         raise HTTPException(status_code=404, detail="Minion not registered")
 
     # Find an unassigned task
-    for hash_value, task in tasks.items():
+    for task_id, task in tasks.items():
         if task.status == TaskStatus.PENDING:
             task.status = TaskStatus.ASSIGNED
             task.assigned_to = minion_id
-            return {"hash": hash_value}
+            fmt = FORMATTERS[FORMATTER_TASK_NAME]
+            return {
+                "task_id":   task_id,
+                "hash":      task.hash_value,
+                "start":     task.start,
+                "end":       task.end,
+                "start_str": fmt.number_to_string(task.start),
+                "end_str":   fmt.number_to_string(task.end),
+            }
 
     return {"status": "no_tasks"}
 
@@ -162,7 +178,22 @@ async def get_status():
     """Get the current status of all tasks and minions."""
     return {
         "minions": minions,
-        "tasks": {k: v.dict() for k, v in tasks.items()}
+        "tasks": {k: v.model_dump() for k, v in tasks.items()}
+    }
+
+
+@app.get("/all-tasks")
+async def all_task() -> Dict[str, Dict[str, Any]]:
+    """
+    Return the full in-memory tasks dict, keyed by task_id.
+    Each value includes hash_value, start/end, status, assigned_to, result.
+    """
+    # Convert each HashTask into a plain dict for JSON serialization
+    return {
+        "tasks": {
+            task_id: task.model_dump()
+            for task_id, task in tasks.items()
+        }
     }
 
 
