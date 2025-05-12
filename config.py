@@ -9,8 +9,7 @@ import logging
 
 MASTER_SERVER_HOST = "localhost"
 MASTER_SERVER_PORT = 8000
-
-MINION_HOST = "localhost"
+MASTER_SERVER_URL = f"http://{MASTER_SERVER_HOST}:{MASTER_SERVER_PORT}"
 
 
 def file_name(name: str, port: int | None = None) -> str:
@@ -65,9 +64,14 @@ def parse_args(description: str) -> argparse.Namespace:
                         choices=['debug', 'info',
                                  'warning', 'error', 'critical'],
                         help='Log level to use')
-    if "minion" in description:
+
+    if "minion" in description.lower():
+        parser.add_argument("--host", type=str, default="localhost",
+                            help='Host to run the server on')
         parser.add_argument("--port", type=int, required=True,
                             help='Port to run the server on')
+
     args = parser.parse_args()
     args.log_level = getattr(logging, args.log_level.upper())
+
     return args

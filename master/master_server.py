@@ -3,6 +3,7 @@ Master server for the password cracker.
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import RedirectResponse
 from typing import Dict
 import hashlib
 import asyncio
@@ -10,7 +11,7 @@ from pathlib import Path
 import json
 import uvicorn
 
-from config import MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
+from config import MASTER_SERVER_PORT, setup_logger, parse_args
 from .utils.models import HashTask, MinionRegistration
 from .utils.utils import get_hash_from_file, save_temp_file
 
@@ -25,9 +26,13 @@ app = FastAPI(title="Password Cracker Master Server")
 # Store registered minions
 minions: Dict[str, dict] = {}
 
-
 # Store tasks
 tasks: Dict[str, HashTask] = {}
+
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.post("/register")
@@ -108,5 +113,5 @@ async def get_status():
     }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=MASTER_SERVER_HOST,
+    uvicorn.run(app, host=args.host,
                 log_level=args.log_level, port=MASTER_SERVER_PORT)
