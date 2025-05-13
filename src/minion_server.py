@@ -7,14 +7,12 @@ from typing import AsyncIterator, Dict
 
 import asyncio
 import httpx
-from pydantic import ValidationError
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from config import MINION_SERVER_LOGGER, parse_args, setup_logger, MASTER_SERVER_URL
-from models.schemas.response import GetTaskResponse
-from utils.minion_utils import crack_range
+from utils.minion_utils import process_task_response
 
 args = parse_args("Password Cracker Minion Server")
 
@@ -88,15 +86,8 @@ async def disconnect_from_master() -> None:
         logger.info(f"Disconnected from master server as minion {MINION_ID}")
 
 
-async def fetch_tasks_loop(minion_id: str, minion_registered: bool, poll_interval: float = 5.0):
-    """Fetch tasks from the master server.
-
-    1) Fetch exactly one task
-    2) If found, crack it (await crack_range)
-    3) If none, sleep poll_interval
-    4) If master unreachable, exit loop
-    """
-
+async def fetch_task_from_master(minion_id: str, minion_registered: bool, poll_interval: float = 5.0) -> None:
+    """Fetch tasks from the master server."""
     async with httpx.AsyncClient() as client:
         logger.info(f"Fetching tasks loop for minion {minion_id}")
         while minion_registered:
@@ -111,49 +102,8 @@ async def fetch_tasks_loop(minion_id: str, minion_registered: bool, poll_interva
                     await asyncio.sleep(poll_interval)
                     continue
 
-                if resp.status_code == 204:
-                    logger.debug(f"No tasks available for minion {minion_id}")
+                if not await process_task_response(resp, minion_id):
                     await asyncio.sleep(poll_interval)
-                    continue
-
-                if resp.status_code != 200:
-                    logger.error(
-                        f"Unexpected status {resp.status_code} from get-task")
-                    await asyncio.sleep(poll_interval)
-                    continue
-
-                if resp.status_code == 200:
-                    # we got a task!
-                    try:
-                        payload = resp.json()
-                    except ValueError as e:
-                        logger.error(
-                            "Invalid GetTaskResponse payload", exc_info=e)
-                        await asyncio.sleep(poll_interval)
-                        continue
-
-                    try:
-                        task = GetTaskResponse(**payload)
-                    except ValidationError as e:
-                        logger.error(
-                            "Invalid GetTaskResponse payload", exc_info=e)
-                        await asyncio.sleep(poll_interval)
-                        continue
-
-                    # process it *synchronously* (so we only handle one at a time)
-                    await crack_range(
-                        minion_id=minion_id,
-                        task_id=task.task_id,
-                        hash_value=task.hash_value,
-                        start=task.start,
-                        end=task.end,
-                    )
-                    # once crack_range returns, we loop back to fetch the *next* task
-                    continue
-
-                logger.error(
-                    f"Unexpected status {resp.status_code} from get-task")
-                await asyncio.sleep(poll_interval)
 
             except Exception as e:
                 logger.error("Error fetching task:", exc_info=e)
@@ -170,7 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if is_registered:
         task_heartbeat = asyncio.create_task(send_heartbeat())
         task_fetch_tasks = asyncio.create_task(
-            fetch_tasks_loop(MINION_ID, is_registered, FETCH_TASKS_INTERVAL))
+            fetch_task_from_master(MINION_ID, is_registered, FETCH_TASKS_INTERVAL))
     yield
     # Shutdown
     if is_registered:

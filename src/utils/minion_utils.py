@@ -6,10 +6,12 @@ from hashlib import md5
 
 from logging import getLogger
 import httpx
+from pydantic import ValidationError
 
 from config import FORMATTER_TASK_NAME, MASTER_SERVER_URL, MINION_SERVER_LOGGER
 from formatters import FORMATTERS
 from models.schemas.request import SubmitResultRequest
+from models.schemas.response import GetTaskResponse
 
 logger = getLogger(MINION_SERVER_LOGGER)
 
@@ -83,3 +85,30 @@ async def crack_range(minion_id: str, task_id: str, hash_value: str, start: int,
     logger.info(
         f"[{task_id}] - NO MATCH found in range ({start}, {end + 1})")
     await submit_result(minion_id, task_id, "")
+
+
+async def process_task_response(resp: httpx.Response, minion_id: str) -> bool:
+    """Process a task response from the master server.
+    Returns True if a task was processed, False if we should sleep and retry."""
+    if resp.status_code == 204:
+        logger.debug(f"No tasks available for minion {minion_id}")
+        return False
+
+    if resp.status_code != 200:
+        logger.error(f"Unexpected status {resp.status_code} from get-task")
+        return False
+
+    try:
+        task = GetTaskResponse(**resp.json())
+    except (ValueError, ValidationError) as e:
+        logger.error("Invalid GetTaskResponse payload", exc_info=e)
+        return False
+
+    await crack_range(
+        minion_id=minion_id,
+        task_id=task.task_id,
+        hash_value=task.hash_value,
+        start=task.start,
+        end=task.end,
+    )
+    return True
