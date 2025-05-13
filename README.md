@@ -12,7 +12,6 @@ A simple **master–minion** system for distributed MD5 brute‑forcing of phone
 * [Configuration](#configuration)
 * [Directory Structure](#directory-structure)
 * [Running Instructions](#running-instructions)
-
   * [Starting the Master](#starting-the-master)
   * [Starting a Minion](#starting-a-minion)
   * [Uploading Hashes](#uploading-hashes)
@@ -101,6 +100,7 @@ Edit `config.py` to adjust:
 ## 📂 Directory Structure
 
 ```
+password-cracker
 ├── src/
 │   ├── master_server.py
 │   ├── minion_server.py
