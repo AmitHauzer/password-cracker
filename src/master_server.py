@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Union
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
 from models.models import HashTask, TaskStatus
-from models.schemas.request_schemas import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
-from models.schemas.response_schemas import GetTaskResponse, NoTasksResponse
+from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
+from models.schemas.response import GetTaskResponse
 from utils.master_utils import get_hash_from_file, save_temp_file, split_range
 from formatters import FORMATTERS
 
@@ -73,6 +73,8 @@ async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
     minions[req.minion_id]["status"] = "disconnected"
+    logger.info(
+        f"Minion {req.minion_id} disconnected successfully")
     return {"status": "success"}
 
 
@@ -138,8 +140,10 @@ async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/get-task", response_model=Union[GetTaskResponse, NoTasksResponse])
-async def get_task(minion_id: str) -> Dict[str, Any]:
+@app.get("/get-task",
+         response_model=GetTaskResponse,
+         responses={204: {"description": "No tasks available"}})
+async def get_task(minion_id: str) -> Union[GetTaskResponse, Response]:
     """Get a task for a minion to process."""
     if minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
@@ -151,14 +155,25 @@ async def get_task(minion_id: str) -> Dict[str, Any]:
             task.assigned_to = minion_id
             fmt = FORMATTERS[FORMATTER_TASK_NAME]
             return GetTaskResponse(task_id=task_id,
-                                   hash=task.hash_value,
+                                   hash_value=task.hash_value,
                                    start=task.start,
                                    end=task.end,
                                    start_str=fmt.number_to_string(task.start),
                                    end_str=fmt.number_to_string(task.end),
                                    )
 
-    return NoTasksResponse(status="no_tasks")
+    return Response(status_code=204)
+
+
+@app.get("/task-status")
+async def task_status(task_id: str = Query(..., description="ID of the task to check")) -> Dict[str, str]:
+    """
+    Return the current status of a given task_id.
+    """
+    task = tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"task_id": task_id, "status": task.status.value}
 
 
 @app.get("/all-tasks")
@@ -205,17 +220,6 @@ async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
         task.status = TaskStatus.CANCELLED
 
     return {"status": "success", "task_id": req.task_id, "new_status": task.status.value}
-
-
-@app.get("/task-status")
-async def task_status(task_id: str = Query(..., description="ID of the task to check")) -> Dict[str, str]:
-    """
-    Return the current status of a given task_id.
-    """
-    task = tasks.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return {"task_id": task_id, "status": task.status.value}
 
 
 @app.get("/status")
