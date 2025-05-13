@@ -121,31 +121,40 @@ async def fetch_tasks_loop(minion_id: str, minion_registered: bool, poll_interva
                         f"Unexpected status {resp.status_code} from get-task")
                     await asyncio.sleep(poll_interval)
                     continue
-                # we got a task!
-                try:
-                    payload = resp.json()
-                except ValueError as e:
-                    logger.error("Invalid GetTaskResponse payload", exc_info=e)
-                    await asyncio.sleep(poll_interval)
+
+                if resp.status_code == 200:
+                    # we got a task!
+                    try:
+                        payload = resp.json()
+                    except ValueError as e:
+                        logger.error(
+                            "Invalid GetTaskResponse payload", exc_info=e)
+                        await asyncio.sleep(poll_interval)
+                        continue
+
+                    try:
+                        task = GetTaskResponse(**payload)
+                    except ValidationError as e:
+                        logger.error(
+                            "Invalid GetTaskResponse payload", exc_info=e)
+                        await asyncio.sleep(poll_interval)
+                        continue
+
+                    # process it *synchronously* (so we only handle one at a time)
+                    await crack_range(
+                        minion_id=minion_id,
+                        task_id=task.task_id,
+                        hash_value=task.hash_value,
+                        start=task.start,
+                        end=task.end,
+                    )
+                    # once crack_range returns, we loop back to fetch the *next* task
                     continue
 
-                try:
-                    task = GetTaskResponse(**payload)
-                except ValidationError as e:
-                    logger.error("Invalid GetTaskResponse payload", exc_info=e)
-                    await asyncio.sleep(poll_interval)
-                    continue
+                logger.error(
+                    f"Unexpected status {resp.status_code} from get-task")
+                await asyncio.sleep(poll_interval)
 
-                # process it *synchronously* (so we only handle one at a time)
-                await crack_range(
-                    minion_id=minion_id,
-                    task_id=task.task_id,
-                    hash_value=task.hash_value,
-                    start=task.start,
-                    end=task.end,
-                )
-
-                # once crack_range returns, we loop back to fetch the *next* task
             except Exception as e:
                 logger.error("Error fetching task:", exc_info=e)
                 await asyncio.sleep(poll_interval)
