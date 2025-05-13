@@ -2,18 +2,19 @@
 Master server for the password cracker.
 """
 
-from typing import Any, Dict, List, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Union
 from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
-from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER, MASTER_SERVER_PORT, setup_logger, parse_args
+from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER, MASTER_SERVER_PORT, TASKS_DB_FILE, setup_logger, parse_args
 from models.models import HashTask, TaskStatus
 from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
 from models.schemas.response import GetTaskResponse
-from utils.master_utils import get_hash_from_file, remove_assigned_tasks, save_temp_file, split_range
+from utils.master_utils import get_hash_from_file, load_tasks_from_file, remove_assigned_tasks, save_tasks_to_file, save_temp_file, split_range
 from formatters import FORMATTERS
 
 
@@ -22,14 +23,32 @@ args = parse_args("Password Cracker Master Server")
 
 logger = setup_logger(MASTER_SERVER_LOGGER, log_level=args.log_level)
 
-# Create FastAPI app
-app = FastAPI(title="Password Cracker Master Server")
 
 # Store registered minions
 minions: Dict[str, dict] = {}
 
 # Store tasks
 tasks: Dict[str, HashTask] = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Lifespan events for the application."""
+    # Startup
+    global tasks
+
+    logger.info("Master server is starting")
+
+    # load tasks from tasks_db.json if exists
+    tasks = load_tasks_from_file(TASKS_DB_FILE)
+    yield
+    # Shutdown
+    # save tasks to tasks_db.json
+    save_tasks_to_file(TASKS_DB_FILE, tasks)
+    logger.info("Master server is shutting down")
+
+# Create FastAPI app
+app = FastAPI(title="Password Cracker Master Server", lifespan=lifespan)
 
 
 @app.get("/")

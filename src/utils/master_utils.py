@@ -2,6 +2,8 @@
 Utility functions for the master server.
 """
 
+import json
+import os
 from pathlib import Path
 from typing import Generator
 from logging import getLogger
@@ -81,3 +83,30 @@ def remove_assigned_tasks(tasks: dict[str, HashTask], minion_id: str) -> None:
             task.status = TaskStatus.PENDING
             task.assigned_to = None
             task.result = None
+
+
+def load_tasks_from_file(file_path: Path) -> dict[str, HashTask]:
+    """Load tasks from a file."""
+
+    if not os.path.exists(file_path):
+        return {}
+    with open(file_path, "r", encoding="utf-8") as f:
+        # load as dict
+        tasks_dict = json.load(f)
+
+    # convert to HashTask objects
+    tasks = {k: HashTask(**v) for k, v in tasks_dict.items()}
+
+    logger.info(f"Loading tasks from {file_path}")
+    return tasks
+
+
+def save_tasks_to_file(file_path: Path, tasks: dict[str, HashTask]) -> None:
+    """Save tasks to a file."""
+    logger.info(f"Saving tasks to {file_path}")
+
+    # convert to dict
+    tasks_dict = {k: v.model_dump() for k, v in tasks.items()}
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(tasks_dict, f)

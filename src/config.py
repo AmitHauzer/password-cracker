@@ -7,14 +7,19 @@ from pathlib import Path
 import sys
 import logging
 
+# Master server configuration
 MASTER_SERVER_HOST = "localhost"
 MASTER_SERVER_PORT = 8000
 MASTER_SERVER_URL = f"http://{MASTER_SERVER_HOST}:{MASTER_SERVER_PORT}"
 
-FORMATTER_TASK_NAME = "israel_phone"
-
+# Minion server configuration
 MASTER_SERVER_LOGGER = "master_server"
 MINION_SERVER_LOGGER = "minion_server"
+
+# Task configuration
+FORMATTER_TASK_NAME = "israel_phone"
+TASKS_DB_FILE = Path("tasks_db.json")
+LOG_DIR = Path("logs")
 
 
 def file_name(name: str, port: int | None = None) -> str:
@@ -48,10 +53,9 @@ def setup_logger(name: str, log_level: int = logging.INFO, port: int | None = No
     console_handler.setFormatter(console_formatter)
 
     # Create file handler
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    LOG_DIR.mkdir(exist_ok=True)
     file_handler = logging.FileHandler(
-        log_dir / file_name(name, port),
+        LOG_DIR / file_name(name, port),
         encoding='utf-8'
     )
     file_handler.setFormatter(console_formatter)
@@ -64,6 +68,7 @@ def setup_logger(name: str, log_level: int = logging.INFO, port: int | None = No
 
 
 def parse_args(description: str) -> argparse.Namespace:
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--log-level', type=str, default='info',
                         choices=['debug', 'info',
