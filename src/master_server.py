@@ -154,22 +154,37 @@ async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
          responses={204: {"description": "No tasks available"}})
 async def get_task(minion_id: str) -> Union[GetTaskResponse, Response]:
     """Get a task for a minion to process."""
+    # 1) Validate minion
     if minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
-    # Find an unassigned task
-    for task_id, task in tasks.items():
+    # 2) If this minion already has an ASSIGNED task, re-return it
+    for tid, task in tasks.items():
+        if task.assigned_to == minion_id and task.status == TaskStatus.ASSIGNED:
+            fmt = FORMATTERS[FORMATTER_TASK_NAME]
+            return GetTaskResponse(
+                task_id=tid,
+                hash_value=task.hash_value,
+                start=task.start,
+                end=task.end,
+                start_str=fmt.number_to_string(task.start),
+                end_str=fmt.number_to_string(task.end),
+            )
+
+    # 3) Otherwise, grab the next PENDING task
+    for tid, task in tasks.items():
         if task.status == TaskStatus.PENDING:
             task.status = TaskStatus.ASSIGNED
             task.assigned_to = minion_id
             fmt = FORMATTERS[FORMATTER_TASK_NAME]
-            return GetTaskResponse(task_id=task_id,
-                                   hash_value=task.hash_value,
-                                   start=task.start,
-                                   end=task.end,
-                                   start_str=fmt.number_to_string(task.start),
-                                   end_str=fmt.number_to_string(task.end),
-                                   )
+            return GetTaskResponse(
+                task_id=tid,
+                hash_value=task.hash_value,
+                start=task.start,
+                end=task.end,
+                start_str=fmt.number_to_string(task.start),
+                end_str=fmt.number_to_string(task.end),
+            )
 
     return Response(status_code=204)
 
