@@ -13,7 +13,7 @@ from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER
 from models.models import HashTask, TaskStatus
 from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
 from models.schemas.response import GetTaskResponse
-from utils.master_utils import get_hash_from_file, save_temp_file, split_range
+from utils.master_utils import get_hash_from_file, remove_assigned_tasks, save_temp_file, split_range
 from formatters import FORMATTERS
 
 
@@ -73,6 +73,10 @@ async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
     minions[req.minion_id]["status"] = "disconnected"
+
+    # change assigned tasks to pending
+    remove_assigned_tasks(tasks, req.minion_id)
+
     logger.info(
         f"Minion {req.minion_id} disconnected successfully")
     return {"status": "success"}
@@ -150,22 +154,37 @@ async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
          responses={204: {"description": "No tasks available"}})
 async def get_task(minion_id: str) -> Union[GetTaskResponse, Response]:
     """Get a task for a minion to process."""
+    # 1) Validate minion
     if minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
-    # Find an unassigned task
-    for task_id, task in tasks.items():
+    # 2) If this minion already has an ASSIGNED task, re-return it
+    for tid, task in tasks.items():
+        if task.assigned_to == minion_id and task.status == TaskStatus.ASSIGNED:
+            fmt = FORMATTERS[FORMATTER_TASK_NAME]
+            return GetTaskResponse(
+                task_id=tid,
+                hash_value=task.hash_value,
+                start=task.start,
+                end=task.end,
+                start_str=fmt.number_to_string(task.start),
+                end_str=fmt.number_to_string(task.end),
+            )
+
+    # 3) Otherwise, grab the next PENDING task
+    for tid, task in tasks.items():
         if task.status == TaskStatus.PENDING:
             task.status = TaskStatus.ASSIGNED
             task.assigned_to = minion_id
             fmt = FORMATTERS[FORMATTER_TASK_NAME]
-            return GetTaskResponse(task_id=task_id,
-                                   hash_value=task.hash_value,
-                                   start=task.start,
-                                   end=task.end,
-                                   start_str=fmt.number_to_string(task.start),
-                                   end_str=fmt.number_to_string(task.end),
-                                   )
+            return GetTaskResponse(
+                task_id=tid,
+                hash_value=task.hash_value,
+                start=task.start,
+                end=task.end,
+                start_str=fmt.number_to_string(task.start),
+                end_str=fmt.number_to_string(task.end),
+            )
 
     return Response(status_code=204)
 
@@ -212,6 +231,8 @@ async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
 
     # 3) Update this task
     if req.result:
+        logger.info(
+            f"Found password result: {req.result} for task {req.task_id} from {req.minion_id}")
         task.status = TaskStatus.COMPLETED
         task.result = req.result
         # 4) Cancel all other slices for the same hash

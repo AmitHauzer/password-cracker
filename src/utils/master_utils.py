@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 
 from config import MASTER_SERVER_LOGGER
+from models.models import HashTask, TaskStatus
 
 logger = getLogger(MASTER_SERVER_LOGGER)
 
@@ -68,3 +69,15 @@ def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
         current = e + 1
 
     return slices
+
+
+def remove_assigned_tasks(tasks: dict[str, HashTask], minion_id: str) -> None:
+    """Remove minion's assigned tasks from the tasks dictionary."""
+    for _, task in tasks.items():
+        if task.status == TaskStatus.COMPLETED:
+            continue
+
+        if task.assigned_to == minion_id:
+            task.status = TaskStatus.PENDING
+            task.assigned_to = None
+            task.result = None
