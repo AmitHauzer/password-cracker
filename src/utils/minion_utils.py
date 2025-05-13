@@ -4,12 +4,14 @@
 
 from hashlib import md5
 
-from fastapi.logger import logger
+from logging import getLogger
 import httpx
 
-from config import FORMATTER_TASK_NAME, MASTER_SERVER_URL
+from config import FORMATTER_TASK_NAME, MASTER_SERVER_URL, MINION_SERVER_LOGGER
 from formatters import FORMATTERS
 from models.schemas.request import SubmitResultRequest
+
+logger = getLogger(MINION_SERVER_LOGGER)
 
 
 async def should_continue(task_id: str) -> bool:

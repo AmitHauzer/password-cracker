@@ -13,6 +13,9 @@ MASTER_SERVER_URL = f"http://{MASTER_SERVER_HOST}:{MASTER_SERVER_PORT}"
 
 FORMATTER_TASK_NAME = "israel_phone"
 
+MASTER_SERVER_LOGGER = "master_server"
+MINION_SERVER_LOGGER = "minion_server"
+
 
 def file_name(name: str, port: int | None = None) -> str:
     if "minion" in name:

@@ -1,12 +1,17 @@
 """
 Utility functions for the master server.
 """
+
 from pathlib import Path
 from typing import Generator
+from logging import getLogger
 
-from asyncio.log import logger
 from fastapi import HTTPException
 from fastapi import UploadFile
+
+from config import MASTER_SERVER_LOGGER
+
+logger = getLogger(MASTER_SERVER_LOGGER)
 
 
 def get_hash_from_file(file_path: Path) -> Generator[str, None, None]:
@@ -42,6 +47,13 @@ def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
     Divide [start..end] into `parts` contiguous slices.
     Handles remainders so that early slices get one extra item when needed.
     """
+    if start > end:
+        raise HTTPException(
+            status_code=500, detail="start must be less than end")
+    if parts <= 0:
+        raise HTTPException(
+            status_code=500, detail="parts must be greater than 0")
+
     total = end - start + 1
     base, rem = divmod(total, parts)
 

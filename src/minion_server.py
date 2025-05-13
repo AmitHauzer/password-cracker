@@ -12,14 +12,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
-from config import parse_args, setup_logger, MASTER_SERVER_URL
+from config import MINION_SERVER_LOGGER, parse_args, setup_logger, MASTER_SERVER_URL
 from models.schemas.response import GetTaskResponse
 from utils.minion_utils import crack_range
 
 args = parse_args("Password Cracker Minion Server")
 
 logger = setup_logger(
-    "minion_server", log_level=args.log_level, port=args.port)
+    MINION_SERVER_LOGGER, log_level=args.log_level, port=args.port)
 
 # Minion configuration
 MINION_ID = f"minion-{args.port}"

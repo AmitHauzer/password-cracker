@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
-from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_PORT, setup_logger, parse_args
+from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER, MASTER_SERVER_PORT, setup_logger, parse_args
 from models.models import HashTask, TaskStatus
 from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
 from models.schemas.response import GetTaskResponse
@@ -20,7 +20,7 @@ from formatters import FORMATTERS
 # Parse command line arguments
 args = parse_args("Password Cracker Master Server")
 
-logger = setup_logger("master_server", log_level=args.log_level)
+logger = setup_logger(MASTER_SERVER_LOGGER, log_level=args.log_level)
 
 # Create FastAPI app
 app = FastAPI(title="Password Cracker Master Server")
@@ -111,8 +111,11 @@ async def minion_heartbeat(minion_id: str) -> Dict[str, str]:
 async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
     """Upload a file containing MD5 hashes."""
     try:
-        # TODO: check if the the master server is already processing a file
-        # TODO: if so, return a message that the server is busy
+        if any(t.status in (TaskStatus.PENDING, TaskStatus.ASSIGNED) for t in tasks.values()):
+            raise HTTPException(status_code=429, detail="Server is busy")
+        if len(minions) == 0:
+            raise HTTPException(
+                status_code=400, detail="No minions registered")
 
         # Save the uploaded file temporarily
         temp_file = await save_temp_file(file)
@@ -136,8 +139,10 @@ async def upload_hashes(file: UploadFile = File(...)) -> Dict[str, str]:
         temp_file.unlink()
 
         return {"status": "success", "message": f"Processed {len(tasks)} hashes"}
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/get-task",
