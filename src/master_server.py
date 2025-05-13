@@ -13,7 +13,7 @@ from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER
 from models.models import HashTask, TaskStatus
 from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
 from models.schemas.response import GetTaskResponse
-from utils.master_utils import get_hash_from_file, save_temp_file, split_range
+from utils.master_utils import get_hash_from_file, remove_assigned_tasks, save_temp_file, split_range
 from formatters import FORMATTERS
 
 
@@ -73,6 +73,10 @@ async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
     minions[req.minion_id]["status"] = "disconnected"
+
+    # change assigned tasks to pending
+    remove_assigned_tasks(tasks, req.minion_id)
+
     logger.info(
         f"Minion {req.minion_id} disconnected successfully")
     return {"status": "success"}
@@ -212,6 +216,8 @@ async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
 
     # 3) Update this task
     if req.result:
+        logger.info(
+            f"Found password result: {req.result} for task {req.task_id} from {req.minion_id}")
         task.status = TaskStatus.COMPLETED
         task.result = req.result
         # 4) Cancel all other slices for the same hash
