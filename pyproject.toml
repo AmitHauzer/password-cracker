@@ -3,7 +3,7 @@ name = "password-cracker"
 version = "0.1.0"
 description = "Password cracker with master-minion architecture"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
