@@ -20,8 +20,8 @@ MINION_SERVER_LOGGER = "minion_server"
 FORMATTER_TASK_NAME = "israel_phone"
 TASKS_DB_FILE = Path("tasks_db.json")
 LOG_DIR = Path("logs")
-LOG_PROGRESS_INTERVAL = 100_000  # attempts, log progress
-CANCEL_CHECK_INTERVAL = 10_000  # attempts, check if minion should stop
+LOG_PROGRESS_INTERVAL = 100_000  # for cracking progress
+CANCEL_CHECK_INTERVAL = 10_000   # for checking if minion should stop
 
 
 def file_name(name: str, port: int | None = None) -> str:
