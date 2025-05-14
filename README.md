@@ -1,4 +1,4 @@
-# 🔎 Distributed MD5 Phone Number Cracker 🔎
+# Password-Cracker 🔎
 
 A simple **master–minion** system for distributed MD5 brute‑forcing of phone‑number preimages. Currently specialized for Israeli phone‑number formats (`05X-XXXXXXX`), but easily extensible to other formats.
 
@@ -43,7 +43,7 @@ A simple **master–minion** system for distributed MD5 brute‑forcing of phone
 
 * Python 3.11 or newer
 * `pip` for package installation
-* `uv` CLI tool (install with `pip install uv`)
+* `uv` package manager tool. [**Optional**] (install with `pip install uv`)
 
 ## 📦 Installation
 
