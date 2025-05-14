@@ -38,12 +38,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global tasks
 
     logger.info("Master server is starting")
-
-    # load tasks from tasks_db.json if exists
     tasks = load_tasks_from_file(TASKS_DB_FILE)
     yield
     # Shutdown
-    # save tasks to tasks_db.json
     save_tasks_to_file(TASKS_DB_FILE, tasks)
     logger.info("Master server is shutting down")
 
