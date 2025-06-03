@@ -3,12 +3,13 @@ Configuration for the password cracker.
 """
 
 import argparse
+import os
 from pathlib import Path
 import sys
 import logging
 
 # Master server configuration
-MASTER_SERVER_HOST = "localhost"
+MASTER_SERVER_HOST = os.environ.get("MASTER_SERVER_HOST", "localhost")
 MASTER_SERVER_PORT = 8000
 MASTER_SERVER_URL = f"http://{MASTER_SERVER_HOST}:{MASTER_SERVER_PORT}"
 
@@ -18,7 +19,7 @@ MINION_SERVER_LOGGER = "minion_server"
 
 # Task configuration
 FORMATTER_TASK_NAME = "israel_phone"
-TASKS_DB_FILE = Path("tasks_db.json")
+TASKS_DB_FILE = Path("data/tasks_db.json")
 LOG_DIR = Path("logs")
 LOG_PROGRESS_INTERVAL = 100_000  # for cracking progress
 CANCEL_CHECK_INTERVAL = 10_000   # for checking if minion should stop

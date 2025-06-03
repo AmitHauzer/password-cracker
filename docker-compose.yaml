@@ -1,0 +1,91 @@
+
+
+services:
+  master:
+    build: .
+    container_name: master
+    command: >
+      python src/master_server.py
+    ports:
+      - "8000:8000"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+
+  minion1:
+    build: .
+    container_name: minion1
+    command: >
+      python src/minion_server.py --port 8001 --host minion1
+    ports:
+      - "8001:8001"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    depends_on:
+      - master
+    volumes:
+      - ./logs:/app/logs
+
+  minion2:
+    build: .
+    container_name: minion2
+    command: >
+      python src/minion_server.py --port 8002 --host minion2
+    ports:
+      - "8002:8002"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    depends_on:
+      - master
+    volumes:
+      - ./logs:/app/logs
+
+  minion3:
+    build: .
+    container_name: minion3
+    command: >
+      python src/minion_server.py --port 8003 --host minion3
+    ports:
+      - "8003:8003"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    depends_on:
+      - master
+    volumes:
+      - ./logs:/app/logs
+
+  minion4:
+    build: .
+    container_name: minion4
+    command: >
+      python src/minion_server.py --port 8004 --host minion4
+    ports:
+      - "8004:8004"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    depends_on:
+      - master
+    volumes:
+      - ./logs:/app/logs
+
+  minion5:
+    build: .
+    container_name: minion5
+    command: >
+      python src/minion_server.py --port 8005 --host minion5
+    ports:
+      - "8005:8005"
+    environment:
+      MASTER_SERVER_HOST: "master"
+    depends_on:
+      - master
+    volumes:
+      - ./logs:/app/logs
+
+
+volumes:
+  # This makes a local "master_data" folder for JSON output
+  data:
+  logs:
