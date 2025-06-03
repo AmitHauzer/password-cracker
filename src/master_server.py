@@ -3,7 +3,7 @@ Master server for the password cracker.
 """
 
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict, List, Union
+from typing import Any, AsyncIterator, Dict, Union
 from datetime import datetime
 
 import uvicorn
@@ -11,7 +11,7 @@ from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from config import FORMATTER_TASK_NAME, MASTER_SERVER_HOST, MASTER_SERVER_LOGGER, MASTER_SERVER_PORT, TASKS_DB_FILE, setup_logger, parse_args
-from models.models import HashTask, TaskStatus
+from models.models import HashTask, Minion, MinionStatus, TaskStatus
 from models.schemas.request import DisconnectRequest, MinionRegistrationRequest, SubmitResultRequest
 from models.schemas.response import GetTaskResponse
 from utils.master_utils import get_hash_from_file, load_tasks_from_file, remove_assigned_tasks, save_tasks_to_file, save_temp_file, split_range
@@ -25,7 +25,7 @@ logger = setup_logger(MASTER_SERVER_LOGGER, log_level=args.log_level)
 
 
 # Store registered minions
-minions: Dict[str, dict] = {}
+minions: Dict[str, Minion] = {}
 
 # Store tasks
 tasks: Dict[str, HashTask] = {}
@@ -56,30 +56,27 @@ async def root() -> RedirectResponse:
 @app.post("/register")
 async def register_minion(minion: MinionRegistrationRequest) -> Dict[str, str]:
     """Register a new minion server."""
-    if minion.minion_id in minions:
+
+    new_minion = Minion(
+        minion_id=minion.minion_id,
+        host=minion.host,
+        port=minion.port,
+        capabilities=minion.capabilities,
+        status=MinionStatus.CONNECCTED,
+        registered_at=datetime.now())
+
+    logger.debug(f"{new_minion=}")
+
+    if new_minion.minion_id in minions:
         logger.warning(
-            f"Minion {minion.minion_id} already registered. Updating registration.")
-        # Update existing minion's information
-        minions[minion.minion_id].update({
-            "host": minion.host,
-            "port": minion.port,
-            "capabilities": minion.capabilities,
-            "status": "active",
-            "registered_at": datetime.now()
-        })
-    else:
-        # Register new minion
-        minions[minion.minion_id] = {
-            "host": minion.host,
-            "port": minion.port,
-            "capabilities": minion.capabilities,
-            "status": "active",
-            "registered_at": datetime.now()
-        }
+            f"Minion {new_minion.minion_id} already registered. Updating registration.")
+
+    # Update the minion's list
+    minions[new_minion.minion_id] = new_minion
 
     logger.info(
-        f"Minion {minion.minion_id} registered successfully at {minion.host}:{minion.port}")
-    return {"status": "success", "message": f"Minion {minion.minion_id} registered successfully"}
+        f"Minion {new_minion.minion_id} registered successfully at {new_minion.host}:{new_minion.port}")
+    return {"status": "success", "message": f"Minion {new_minion.minion_id} registered successfully"}
 
 
 @app.post("/disconnect-minion")
@@ -88,7 +85,8 @@ async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
     if req.minion_id not in minions:
         raise HTTPException(status_code=404, detail="Minion not registered")
 
-    minions[req.minion_id]["status"] = "disconnected"
+    minions[req.minion_id].status = MinionStatus.DISCONNECTED
+    logger.debug(f"Minion {req.minion_id} disconnected at {datetime.now()}")
 
     # change assigned tasks to pending
     remove_assigned_tasks(tasks, req.minion_id)
@@ -98,21 +96,10 @@ async def disconnect_minion(req: DisconnectRequest) -> Dict[str, str]:
     return {"status": "success"}
 
 
-@app.get("/minions")
-async def list_minions() -> Dict[str, List[Dict[str, Any]]]:
+@app.get("/all-minions")
+async def all_minions() -> Dict[str, Dict[str, Minion]]:
     """List all registered minions."""
-    return {
-        "minions": [
-            {
-                "minion_id": mid,
-                "host": data["host"],
-                "port": data["port"],
-                "status": data["status"],
-                "capabilities": data["capabilities"]
-            }
-            for mid, data in minions.items()
-        ]
-    }
+    return {"minions": minions}
 
 
 @app.post("/minions/{minion_id}/heartbeat")
@@ -122,8 +109,8 @@ async def minion_heartbeat(minion_id: str) -> Dict[str, str]:
         raise HTTPException(
             status_code=404, detail=f"Minion {minion_id} not found")
 
-    minions[minion_id]["last_heartbeat"] = datetime.now()
-    minions[minion_id]["status"] = "active"
+    minions[minion_id].last_heartbeat = datetime.now()
+    minions[minion_id].status = MinionStatus.CONNECCTED
     return {"status": "success"}
 
 

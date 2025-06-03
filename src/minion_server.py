@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from config import MINION_SERVER_LOGGER, parse_args, setup_logger, MASTER_SERVER_URL
+from models.schemas.request import DisconnectRequest, MinionRegistrationRequest
 from utils.minion_utils import process_task_response
 
 args = parse_args("Password Cracker Minion Server")
@@ -36,11 +37,12 @@ async def register_to_master() -> bool:
     global is_registered
     try:
         async with httpx.AsyncClient() as client:
-            req = {"minion_id": MINION_ID, "host": MINION_HOST,
-                   "port": MINION_PORT, "capabilities": MINION_CAPABILITIES}
+            req = MinionRegistrationRequest(
+                minion_id=MINION_ID, host=MINION_HOST, port=MINION_PORT, capabilities=MINION_CAPABILITIES)
+
             logger.debug(f"register_to_master request details: {req}")
 
-            response = await client.post(f"{MASTER_SERVER_URL}/register", json={**req}, timeout=REQUEST_TIMEOUT)
+            response = await client.post(f"{MASTER_SERVER_URL}/register", json={**req.model_dump()}, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
 
             if response.status_code == 200:
@@ -82,7 +84,8 @@ async def send_heartbeat() -> None:
 async def disconnect_from_master() -> None:
     """Disconnect from the master server."""
     async with httpx.AsyncClient() as client:
-        await client.post(f"{MASTER_SERVER_URL}/disconnect-minion", json={"minion_id": MINION_ID})
+        req = DisconnectRequest(minion_id=MINION_ID)
+        await client.post(f"{MASTER_SERVER_URL}/disconnect-minion", json={**req.model_dump()}, timeout=REQUEST_TIMEOUT)
         logger.info(f"Disconnected from master server as minion {MINION_ID}")
 
 
