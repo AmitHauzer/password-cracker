@@ -7,13 +7,14 @@ from pydantic import BaseModel
 
 
 class TaskStatus(str, Enum):
-    """Status of a hash task.
+    """
+    Status of a hash task.
 
-    PENDING:    The task is pending.
-    ASSIGNED:   The task is assigned to a minion.
-    COMPLETED:  The task is completed.
-    FAILED:     The task failed.
-    CANCELLED:  The task is cancelled.
+        PENDING:    The task is pending.\n
+        ASSIGNED:   The task is assigned to a minion.
+        COMPLETED:  The task is completed.
+        FAILED:     The task failed.
+        CANCELLED:  The task is cancelled.
     """
     PENDING = "pending"
     ASSIGNED = "assigned"
@@ -23,13 +24,14 @@ class TaskStatus(str, Enum):
 
 
 class HashTask(BaseModel):
-    """Hash task request.
+    """
+    Hash task request.
 
-    hash_value: The hash value to crack.
-    start:      The start of the range to crack.
-    end:        The end of the range to crack.
-    status:     The status of the task.
-    assigned_to: The ID of the minion assigned to the task.
+        hash_value: The hash value to crack.\n
+        start:      The start of the range to crack.
+        end:        The end of the range to crack.
+        status:     The status of the task.
+        assigned_to: The ID of the minion assigned to the task.
     """
     hash_value: str
     start: int

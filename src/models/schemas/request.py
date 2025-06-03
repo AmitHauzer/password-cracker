@@ -6,12 +6,13 @@ from pydantic import BaseModel
 
 
 class MinionRegistrationRequest(BaseModel):
-    """Minion registration request.
+    """
+    Minion registration request.
 
-    minion_id: The ID of the minion registering.
-    host:      The host of the minion.
-    port:      The port of the minion.
-    capabilities: The capabilities of the minion.
+        minion_id:      The ID of the minion registering.\n
+        host:           The host of the minion.
+        port:           The port of the minion.
+        capabilities:   The capabilities of the minion.
     """
     minion_id: str
     host: str
@@ -20,11 +21,12 @@ class MinionRegistrationRequest(BaseModel):
 
 
 class SubmitResultRequest(BaseModel):
-    """Submit result request.
+    """
+    Submit result request.
 
-    minion_id: The ID of the minion submitting the result.
-    task_id:   The ID of the task being submitted.
-    result:    The discovered password (empty string if none).
+        minion_id: The ID of the minion submitting the result.\n
+        task_id:   The ID of the task being submitted.
+        result:    The discovered password (empty string if none).
     """
     minion_id: str
     task_id:   str
@@ -32,8 +34,9 @@ class SubmitResultRequest(BaseModel):
 
 
 class DisconnectRequest(BaseModel):
-    """Disconnect request.
+    """
+    Disconnect request.
 
-    minion_id: The ID of the minion disconnecting.
+        minion_id: The ID of the minion disconnecting.
     """
     minion_id: str

@@ -217,18 +217,13 @@ async def task_status(task_id: str = Query(..., description="ID of the task to c
 
 
 @app.get("/all-tasks")
-async def all_tasks() -> Dict[str, Dict[str, Any]]:
+async def all_tasks() -> Dict[str, Dict[str, HashTask]]:
     """
     Return the full in-memory tasks dict, keyed by task_id.
     Each value includes hash_value, start/end, status, assigned_to, result.
     """
     # Convert each HashTask into a plain dict for JSON serialization
-    return {
-        "tasks": {
-            task_id: task.model_dump()
-            for task_id, task in tasks.items()
-        }
-    }
+    return {"tasks": tasks}
 
 
 @app.post("/submit-result")
@@ -267,10 +262,8 @@ async def submit_result(req: SubmitResultRequest) -> Dict[str, Any]:
 @app.get("/status")
 async def get_status() -> Dict[str, Dict[str, Any]]:
     """Get the current status of all tasks and minions."""
-    return {
-        "minions": minions,
-        "tasks": {k: v.model_dump() for k, v in tasks.items()}
-    }
+    return {"minions": minions, "tasks": tasks}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host=MASTER_SERVER_HOST,
