@@ -31,7 +31,7 @@ def get_hash_from_file(file_path: Path) -> Generator[str, None, None]:
 
 async def save_temp_file(file: UploadFile) -> Path:
     """Save a file to the temporary directory."""
-    if not file.filename.endswith(".txt"):
+    if not file.filename or not file.filename.endswith(".txt"):
         logger.error(
             f"File must be a text file. the current file is: {file.filename}")
         raise HTTPException(
@@ -47,7 +47,7 @@ async def save_temp_file(file: UploadFile) -> Path:
 
 def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
     """
-    Divide [start..end] into `parts` contiguous slices.
+    Divide [start..end] into `parts` contiguous slices. (minimum 10 parts)
     Handles remainders so that early slices get one extra item when needed.
     """
     if start > end:
@@ -56,6 +56,8 @@ def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
     if parts <= 0:
         raise HTTPException(
             status_code=500, detail="parts must be greater than 0")
+
+    parts = 10 if parts < 10 else parts
 
     total = end - start + 1
     base, rem = divmod(total, parts)
@@ -76,11 +78,10 @@ def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
 def remove_assigned_tasks(tasks: dict[str, HashTask], minion_id: str) -> None:
     """Remove minion's assigned tasks from the tasks dictionary."""
     for _, task in tasks.items():
-        if task.status == TaskStatus.ASSIGNED:
-            if task.assigned_to == minion_id:
-                task.status = TaskStatus.PENDING
-                task.assigned_to = None
-                task.result = None
+        if task.status == TaskStatus.ASSIGNED and task.assigned_to == minion_id:
+            task.status = TaskStatus.PENDING
+            task.assigned_to = None
+            task.result = None
 
 
 def load_tasks_from_file(file_path: Path) -> dict[str, HashTask]:
