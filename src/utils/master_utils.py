@@ -76,13 +76,11 @@ def split_range(start: int, end: int, parts: int) -> list[tuple[int, int]]:
 def remove_assigned_tasks(tasks: dict[str, HashTask], minion_id: str) -> None:
     """Remove minion's assigned tasks from the tasks dictionary."""
     for _, task in tasks.items():
-        if task.status == TaskStatus.COMPLETED:
-            continue
-
-        if task.assigned_to == minion_id:
-            task.status = TaskStatus.PENDING
-            task.assigned_to = None
-            task.result = None
+        if task.status == TaskStatus.ASSIGNED:
+            if task.assigned_to == minion_id:
+                task.status = TaskStatus.PENDING
+                task.assigned_to = None
+                task.result = None
 
 
 def load_tasks_from_file(file_path: Path) -> dict[str, HashTask]:
